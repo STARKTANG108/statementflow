@@ -1,0 +1,48 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 852 >>
+stream
+BT
+/F1 11 Tf
+50 740 Td
+(FIRST NATIONAL BUSINESS CHECKING STATEMENT) Tj
+0 -22 Td (Account Ending: 4829   Currency: USD) Tj
+0 -22 Td (Statement Period: 2026-10-01 to 2026-10-31) Tj
+0 -22 Td (Opening Balance: 14,250.00) Tj
+0 -22 Td (------------------------------------------------------------) Tj
+0 -22 Td (2026-10-02 ACH CREDIT STRIPE PAYOUT #99281 +4,850.00 19,100.00) Tj
+0 -22 Td (2026-10-05 ACH DEBIT GUSTO PAYROLL OCT-A -2,150.00 16,950.00) Tj
+0 -22 Td (2026-10-09 POS DEBIT AWS CLOUD SERVICES -312.65 16,637.35) Tj
+0 -22 Td (2026-10-14 MERCHANT REFUND AWS PROMO +125.00 16,762.35) Tj
+0 -22 Td (2026-10-19 ACH CREDIT SHOPIFY SETTLEMENT +2,490.00 19,252.35) Tj
+0 -22 Td (2026-10-26 WIRE OUT REGUS OFFICE LEASE -840.00 18,412.35) Tj
+0 -22 Td (------------------------------------------------------------) Tj
+0 -22 Td (Closing Balance: 18,412.35) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001144 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1212
+%%EOF
