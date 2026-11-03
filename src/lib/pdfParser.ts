@@ -3,40 +3,117 @@ import { StatementDocument, TransactionRow, DocumentKind } from "./types";
 
 /**
  * ============================================================================
- * 商用级双通道 PDF 财务解析引擎 (pdfParser.ts)
+ * 商用级双通道 PDF 财务解析引擎 2.1 (加固多银行真实日期与 CR/DR 后缀支持)
  * ============================================================================
- * 通道 1（默认免费零成本极速通道）：使用 unpdf 直接在内存提取电子版 PDF 原始文本流，
- *         通过确定性财务行解析器提取期初/期末余额与交易明细（0 分钱 API 消耗！）。
- * 通道 2（AI 视觉多模态增强通道）：当配置了 OPENROUTER_API_KEY 或 GEMINI_API_KEY 时，
- *         自动启用 Gemini 2.5 Flash 结构化 JSON 解析，攻克复杂双栏账单、手机拍照与纸质扫描件！
+ * 新增支持：
+ * 1. 英文月份缩写日期：Oct 14, 2026 / 14 Oct 2026 / Oct 14 / 14 OCT
+ * 2. 美式无年份短日期：10/02 / 10-14（自动从账单周期提取年份补全！）
+ * 3. 英/澳/信用卡尾缀符号：125.00CR / 45.20DR / (312.65) 括号负数
  */
 
-function normalizeDateToIso(rawDate: string): string {
-  const trimmed = rawDate.trim();
-  // YYYY-MM-DD
+const MONTH_MAP: Record<string, string> = {
+  jan: "01",
+  feb: "02",
+  mar: "03",
+  apr: "04",
+  may: "05",
+  jun: "06",
+  jul: "07",
+  aug: "08",
+  sep: "09",
+  oct: "10",
+  nov: "11",
+  dec: "12",
+};
+
+export function normalizeFlexibleDateToIso(
+  rawDate: string,
+  fallbackYear = "2026"
+): string {
+  const trimmed = rawDate.trim().replace(/,/g, "");
+
+  // 1. YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  // MM/DD/YYYY or MM-DD-YYYY
-  const mdy = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if (mdy) {
-    const mm = mdy[1].padStart(2, "0");
-    const dd = mdy[2].padStart(2, "0");
-    const yyyy = mdy[3].length === 2 ? `20${mdy[3]}` : mdy[3];
+
+  // 2. MM/DD/YYYY or DD/MM/YYYY
+  const slashFull = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (slashFull) {
+    const p1 = parseInt(slashFull[1], 10);
+    const p2 = parseInt(slashFull[2], 10);
+    const yyyy =
+      slashFull[3].length === 2 ? `20${slashFull[3]}` : slashFull[3];
+    // If first part > 12, it is definitely DD/MM/YYYY (UK/AU)
+    const mm = p1 > 12 ? String(p2).padStart(2, "0") : String(p1).padStart(2, "0");
+    const dd = p1 > 12 ? String(p1).padStart(2, "0") : String(p2).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   }
-  return "2026-10-15";
+
+  // 3. Short MM/DD (e.g. Chase "10/04")
+  const slashShort = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (slashShort) {
+    const mm = slashShort[1].padStart(2, "0");
+    const dd = slashShort[2].padStart(2, "0");
+    return `${fallbackYear}-${mm}-${dd}`;
+  }
+
+  // 4. Month Name First: "Oct 14 2026" or "Oct 14"
+  const monthFirst = trimmed.match(
+    /^([A-Za-z]{3,9})\s+(\d{1,2})(?:\s+(\d{2,4}))?$/
+  );
+  if (monthFirst) {
+    const monKey = monthFirst[1].slice(0, 3).toLowerCase();
+    const mm = MONTH_MAP[monKey] || "10";
+    const dd = monthFirst[2].padStart(2, "0");
+    const yyyy = monthFirst[3]
+      ? monthFirst[3].length === 2
+        ? `20${monthFirst[3]}`
+        : monthFirst[3]
+      : fallbackYear;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // 5. Day First (UK/AU/CA): "14 Oct 2026" or "14 Oct"
+  const dayFirst = trimmed.match(
+    /^(\d{1,2})\s+([A-Za-z]{3,9})(?:\s+(\d{2,4}))?$/
+  );
+  if (dayFirst) {
+    const dd = dayFirst[1].padStart(2, "0");
+    const monKey = dayFirst[2].slice(0, 3).toLowerCase();
+    const mm = MONTH_MAP[monKey] || "10";
+    const yyyy = dayFirst[3]
+      ? dayFirst[3].length === 2
+        ? `20${dayFirst[3]}`
+        : dayFirst[3]
+      : fallbackYear;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return `${fallbackYear}-10-15`;
 }
 
-function parseMoneyToken(token: string): number {
-  const isParenNegative = /^\(.*\)$/.test(token.trim());
-  const cleaned = token.replace(/[^0-9.\-]/g, "");
-  const val = parseFloat(cleaned);
-  if (!Number.isFinite(val)) return 0;
-  return isParenNegative ? -Math.abs(val) : val;
+function parseMoneyToken(token: string): {
+  value: number;
+  hasCr: boolean;
+  hasDr: boolean;
+  isNegative: boolean;
+} {
+  const t = token.trim();
+  const hasCr = /CR$/i.test(t);
+  const hasDr = /DR$/i.test(t);
+  const isParenNegative = /^\(.*\)$/.test(t);
+  const hasMinus = t.includes("-");
+  const cleaned = t.replace(/[^0-9.]/g, "");
+  const num = parseFloat(cleaned);
+  const val = Number.isFinite(num) ? num : 0;
+  const isNegative = isParenNegative || hasMinus || hasDr;
+  return {
+    value: isNegative ? -Math.abs(val) : val,
+    hasCr,
+    hasDr,
+    isNegative,
+  };
 }
 
-/**
- * 确定性本地电子 PDF 账单文本解析器（无需外部 API 即可解析标准电子账单文本）
- */
 export function parseRawPdfStatementText(
   rawText: string,
   fileName: string,
@@ -48,35 +125,42 @@ export function parseRawPdfStatementText(
     .map((l) => l.trim())
     .filter(Boolean);
 
+  // Detect statement year if printed in header
+  const yearMatch = rawText.match(/\b(202[0-9])\b/);
+  const detectedYear = yearMatch ? yearMatch[1] : "2026";
+
   let openingBalance = 0;
   let closingBalance = 0;
   let foundOpening = false;
   let foundClosing = false;
 
+  const moneyPattern =
+    /[\+\-\$£€(]?[0-9,]+\.\d{2}(?:\)|CR|DR)?/gi;
+
   for (const line of lines) {
-    if (!foundOpening && /(opening|beginning|previous)\s+balance/i.test(line)) {
-      const m = line.match(/[\-\$£€(]?[0-9,]+\.\d{2}\)?/g);
+    if (!foundOpening && /(opening|beginning|previous|brought\s+forward)\s+balance/i.test(line)) {
+      const m = line.match(moneyPattern);
       if (m && m.length > 0) {
-        openingBalance = parseMoneyToken(m[m.length - 1]);
+        openingBalance = Math.abs(parseMoneyToken(m[m.length - 1]).value);
         foundOpening = true;
       }
     }
     if (
       !foundClosing &&
-      /(closing|ending|new|statement)\s+balance/i.test(line)
+      /(closing|ending|new|carried\s+forward)\s+balance/i.test(line)
     ) {
-      const m = line.match(/[\-\$£€(]?[0-9,]+\.\d{2}\)?/g);
+      const m = line.match(moneyPattern);
       if (m && m.length > 0) {
-        closingBalance = parseMoneyToken(m[m.length - 1]);
+        closingBalance = Math.abs(parseMoneyToken(m[m.length - 1]).value);
         foundClosing = true;
       }
     }
   }
 
   const rows: TransactionRow[] = [];
-  // Match lines starting with a date: 2026-10-02 or 10/02/2026 or 10/02/26
+  // Matches ISO, MM/DD/YYYY, Short MM/DD, "Oct 14, 2026", "14 Oct 2026", "Oct 14"
   const txLineRegex =
-    /^(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(.+)$/;
+    /^(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,?\s+\d{2,4})?|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:,?\s+\d{2,4})?)\s+(.+)$/i;
 
   lines.forEach((line, idx) => {
     const match = line.match(txLineRegex);
@@ -84,10 +168,9 @@ export function parseRawPdfStatementText(
     const rawDate = match[1];
     const rest = match[2];
 
-    const moneyTokens = rest.match(/[\+\-\$£€(]?[0-9,]+\.\d{2}\)?/g);
+    const moneyTokens = rest.match(moneyPattern);
     if (!moneyTokens || moneyTokens.length === 0) return;
 
-    // Remove trailing money tokens from description
     let desc = rest;
     moneyTokens.forEach((tok) => {
       const lastPos = desc.lastIndexOf(tok);
@@ -97,47 +180,52 @@ export function parseRawPdfStatementText(
     });
     desc = desc || "Statement Transaction";
 
-    let signedAmt = 0;
-    let reportedBalance: number | null = null;
+    const amtObj =
+      moneyTokens.length >= 2
+        ? parseMoneyToken(moneyTokens[moneyTokens.length - 2])
+        : parseMoneyToken(moneyTokens[0]);
 
-    if (moneyTokens.length >= 2) {
-      signedAmt = parseMoneyToken(moneyTokens[moneyTokens.length - 2]);
-      reportedBalance = parseMoneyToken(moneyTokens[moneyTokens.length - 1]);
-    } else {
-      signedAmt = parseMoneyToken(moneyTokens[0]);
-    }
+    const reportedBalance =
+      moneyTokens.length >= 2
+        ? Math.abs(parseMoneyToken(moneyTokens[moneyTokens.length - 1]).value)
+        : null;
 
-    // Heuristic if sign wasn't explicit in PDF column
-    const isExplicitNegative =
-      moneyTokens[0].includes("-") || moneyTokens[0].includes("(");
-    const isExplicitPositive = moneyTokens[0].includes("+");
+    const rawAmtToken =
+      moneyTokens.length >= 2
+        ? moneyTokens[moneyTokens.length - 2]
+        : moneyTokens[0];
+
+    const isExplicitPositive = rawAmtToken.includes("+") || amtObj.hasCr;
     const looksLikeCredit =
-      /\b(deposit|credit|refund|payout|settlement|incoming|payroll\s+in)\b/i.test(
+      /\b(deposit|credit|refund|payout|settlement|incoming|interest\s+paid|payment\s+received)\b/i.test(
         desc
       );
     const looksLikeDebit =
-      /\b(debit|withdrawal|pos|wire\s+out|fee|charge|lease|payment\s+to|purchase)\b/i.test(
+      /\b(debit|withdrawal|pos|wire\s+out|fee|charge|lease|purchase|atm|direct\s+debit)\b/i.test(
         desc
       );
 
     let debit = 0;
     let credit = 0;
-    if (isExplicitNegative) {
-      debit = Math.abs(signedAmt);
+    if (amtObj.isNegative) {
+      debit = Math.abs(amtObj.value);
     } else if (isExplicitPositive) {
-      credit = Math.abs(signedAmt);
+      credit = Math.abs(amtObj.value);
     } else if (looksLikeCredit && !looksLikeDebit) {
-      credit = Math.abs(signedAmt);
+      credit = Math.abs(amtObj.value);
     } else if (looksLikeDebit) {
-      debit = Math.abs(signedAmt);
+      debit = Math.abs(amtObj.value);
     } else {
-      if (signedAmt >= 0) credit = signedAmt;
-      else debit = Math.abs(signedAmt);
+      if (docKind === "credit_card") {
+        debit = Math.abs(amtObj.value);
+      } else {
+        credit = Math.abs(amtObj.value);
+      }
     }
 
     rows.push({
       id: `pdf-row-${idx + 1}`,
-      date: normalizeDateToIso(rawDate),
+      date: normalizeFlexibleDateToIso(rawDate, detectedYear),
       payee: desc.split(/\s+/).slice(0, 3).join(" ").slice(0, 32),
       description: desc,
       debit,
@@ -161,9 +249,9 @@ export function parseRawPdfStatementText(
     fileName,
     institutionName: "Extracted PDF Statement",
     accountLast4: "0001",
-    currency: "USD",
-    periodStart: rows[0]?.date || "2026-10-01",
-    periodEnd: rows[rows.length - 1]?.date || "2026-10-31",
+    currency: /£/.test(rawText) ? "GBP" : /€/.test(rawText) ? "EUR" : "USD",
+    periodStart: rows[0]?.date || `${detectedYear}-10-01`,
+    periodEnd: rows[rows.length - 1]?.date || `${detectedYear}-10-31`,
     openingBalance,
     closingBalance,
     pageCount,
@@ -172,9 +260,6 @@ export function parseRawPdfStatementText(
   };
 }
 
-/**
- * 主解析入口：内存解析 PDF 二进制流（Zero-Retention 不写磁盘！）
- */
 export async function parsePdfBuffer(
   buffer: ArrayBuffer,
   fileName: string,
@@ -186,7 +271,6 @@ export async function parsePdfBuffer(
 
   const openRouterKey = process.env.OPENROUTER_API_KEY;
 
-  // If OPENROUTER_API_KEY is configured, use Gemini 2.5 Flash for complex/scanned layouts
   if (openRouterKey) {
     const systemInstruction = `You are a precision financial bank statement & invoice extraction engine.
 Return ONLY valid JSON matching this exact TypeScript structure:
@@ -211,7 +295,7 @@ Return ONLY valid JSON matching this exact TypeScript structure:
   ]
 }
 Rules:
-- debit and credit must ALWAYS be non-negative numbers (>= 0). Never output negative numbers in debit or credit.
+- debit and credit must ALWAYS be non-negative numbers (>= 0).
 - Verify openingBalance + sum(credit) - sum(debit) equals closingBalance.`;
 
     const base64Pdf = Buffer.from(buffer).toString("base64");

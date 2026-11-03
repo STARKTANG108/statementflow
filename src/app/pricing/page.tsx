@@ -1,13 +1,37 @@
 "use client";
 
-import React, { useState } from "react";
-import { Check, RefreshCw } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Check, RefreshCw, KeyRound } from "lucide-react";
 import { siteConfig } from "@/config/site.config";
-import { PAGES_QUOTA_KEY, QUOTA_UPDATED_EVENT } from "@/components/Navbar";
+import {
+  PAGES_QUOTA_KEY,
+  QUOTA_UPDATED_EVENT,
+  addQuotaPages,
+} from "@/components/Navbar";
 
 export default function PricingPage() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [licenseInput, setLicenseInput] = useState<string>("");
+  const [isVerifyingKey, setIsVerifyingKey] = useState<boolean>(false);
+
+  // Auto-fulfill pages when returning from Creem checkout (?checkout=success&plan=...)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") === "success") {
+      const planId = params.get("plan");
+      const matched = siteConfig.pricingPlans.find((p) => p.id === planId);
+      const fulfillKey = `fulfilled_${planId}`;
+      if (matched && !window.sessionStorage.getItem(fulfillKey)) {
+        window.sessionStorage.setItem(fulfillKey, "1");
+        const total = addQuotaPages(matched.pagesIncluded);
+        setNotice(
+          `✓ Payment confirmed! Added +${matched.pagesIncluded} pages (${matched.name}). Your balance is now ${total} pages.`
+        );
+      }
+    }
+  }, []);
 
   const handleCheckout = async (planId: string) => {
     setLoadingPlan(planId);
@@ -26,6 +50,32 @@ export default function PricingPage() {
       setNotice(data.message || data.error);
     } finally {
       setLoadingPlan(null);
+    }
+  };
+
+  const handleRedeemKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!licenseInput.trim()) return;
+    setIsVerifyingKey(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/verify-license", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ licenseKey: licenseInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotice(data.error || "Invalid license key.");
+        return;
+      }
+      const newTotal = addQuotaPages(data.pagesAdded);
+      setLicenseInput("");
+      setNotice(
+        `✓ Activated ${data.planName}! Added +${data.pagesAdded} pages (Total available: ${newTotal} pages).`
+      );
+    } finally {
+      setIsVerifyingKey(false);
     }
   };
 
@@ -50,7 +100,7 @@ export default function PricingPage() {
       </div>
 
       {notice && (
-        <div className="max-w-2xl mx-auto p-4 rounded-2xl bg-[#FFF6F2] border border-[#D97757]/40 text-xs text-[#141413] text-center font-medium">
+        <div className="max-w-2xl mx-auto p-4 rounded-2xl bg-[#EAF4EE] border border-[#2D6A4F]/40 text-xs text-[#141413] text-center font-semibold">
           {notice}
         </div>
       )}
@@ -119,7 +169,32 @@ export default function PricingPage() {
         ))}
       </div>
 
-      <div className="text-center pt-2">
+      {/* Zero-DB License Key Redemption Bar */}
+      <form
+        onSubmit={handleRedeemKey}
+        className="max-w-xl mx-auto bg-white border border-[#E6E1D6] rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center gap-3 shadow-sm"
+      >
+        <div className="flex items-center gap-2 text-xs font-semibold text-[#141413] shrink-0">
+          <KeyRound className="w-4 h-4 text-[#D97757]" />
+          <span>Redeem Order Key:</span>
+        </div>
+        <input
+          type="text"
+          value={licenseInput}
+          onChange={(e) => setLicenseInput(e.target.value)}
+          placeholder="e.g. SF-TAX80-2026"
+          className="w-full flex-1 bg-[#FAF8F5] border border-[#DED8CA] rounded-full px-4 py-2 text-xs text-[#141413] font-mono"
+        />
+        <button
+          type="submit"
+          disabled={isVerifyingKey}
+          className="w-full sm:w-auto px-5 py-2 rounded-full bg-[#141413] hover:bg-[#2C2B29] text-white text-xs font-semibold shrink-0 cursor-pointer"
+        >
+          {isVerifyingKey ? "Checking..." : "Activate"}
+        </button>
+      </form>
+
+      <div className="text-center pt-1">
         <button
           type="button"
           onClick={resetFreeQuota}

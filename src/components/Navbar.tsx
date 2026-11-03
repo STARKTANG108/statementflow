@@ -30,6 +30,14 @@ export function consumeFreePages(pages: number): number {
   return next;
 }
 
+export function addQuotaPages(pages: number): number {
+  const current = getRemainingFreePages();
+  const next = current + pages;
+  window.localStorage.setItem(PAGES_QUOTA_KEY, String(next));
+  window.dispatchEvent(new Event(QUOTA_UPDATED_EVENT));
+  return next;
+}
+
 export default function Navbar() {
   const [pagesLeft, setPagesLeft] = useState<number>(siteConfig.freeTrialPages);
 
@@ -43,7 +51,6 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-[#E6E1D6] bg-[#FAF8F5]/95 backdrop-blur-md">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        {/* Claude Editorial Brand Logo */}
         <Link href="/" className="flex items-center gap-2.5 shrink-0">
           <div className="w-9 h-9 rounded-xl bg-[#D97757] text-white flex items-center justify-center shadow-sm">
             <FileCheck2 className="w-5 h-5" />
@@ -53,7 +60,6 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {/* Obvious 4-Item Visual Navigation */}
         <nav className="hidden md:flex items-center gap-1.5 text-sm font-medium text-[#57544E]">
           <Link
             href="/convert/pdf-to-qbo"
@@ -68,10 +74,10 @@ export default function Navbar() {
             PDF → Xero
           </Link>
           <Link
-            href="/convert/scanned-bank-statement-ocr"
+            href="/convert/chase-statement-pdf-to-qbo-csv"
             className="px-3.5 py-1.5 rounded-full hover:text-[#141413] hover:bg-[#EFECE4] transition"
           >
-            Scanned PDF
+            US &amp; UK Banks
           </Link>
           <Link
             href="/tools/qbo-viewer"
@@ -84,14 +90,13 @@ export default function Navbar() {
           </Link>
         </nav>
 
-        {/* Quota & Primary CTA */}
         <div className="flex items-center gap-2.5 shrink-0">
           <Link
             href="/pricing"
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#F3EFE6] text-[#4A4842] border border-[#E2DDD1] hover:border-[#C96442] transition"
           >
             <Sparkles className="w-3.5 h-3.5 text-[#D97757]" />
-            <span>{pagesLeft} Free Pages</span>
+            <span>{pagesLeft} Pages Left</span>
           </Link>
           <Link
             href="/pricing"
