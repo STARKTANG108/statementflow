@@ -1,13 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Claude / Anthropic Warm Editorial Palette */
+  --background: #faf8f5;
+  --surface: #ffffff;
+  --surface-muted: #f3efe6;
+  --border-warm: #e6e1d6;
+  --foreground: #141413;
+  --foreground-muted: #6b6860;
+  --terracotta: #d97757;
+  --terracotta-hover: #c46243;
+  --sage: #2d6a4f;
+  --sage-bg: #eaf4ee;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.font-editorial {
+  font-family: Georgia, Cambria, "Times New Roman", Times, serif;
 }

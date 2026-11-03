@@ -1,213 +1,120 @@
 import React from "react";
 import Link from "next/link";
-import {
-  ShieldCheck,
-  Calculator,
-  FileSpreadsheet,
-  ArrowRight,
-  CheckCircle2,
-  Wrench,
-} from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { siteConfig } from "@/config/site.config";
 import { seoPagesConfig } from "@/config/seoPages.config";
 import StatementWorkbench from "@/components/StatementWorkbench";
 import SeoSchema from "@/components/SeoSchema";
+import {
+  HeroPipelineIllustration,
+  VisualComparisonCards,
+} from "@/components/VisualDiagrams";
 
 const HOME_FAQS = [
   {
-    question: "How does StatementFlow prevent AI hallucinations on bank numbers?",
+    question: "How does StatementFlow guarantee zero balance errors?",
     answer:
-      "Every extracted PDF runs through our deterministic cents-math Reconciliation Engine: we verify Opening Balance + Total Credits - Total Debits === Closing Balance and check every printed running balance row before you export.",
+      "Every PDF runs through our cents-math reconciliation engine: Opening + Money In - Money Out === Closing Balance.",
   },
   {
-    question: "Can I import the exported .QBO and CSV files straight into QuickBooks and Xero?",
+    question: "Are my uploaded PDF statements stored anywhere?",
     answer:
-      "Yes. Our native .QBO generator includes compliant OFX 102 headers, INTU.BID 3000 bank tags, and deduplicated FITIDs; our Xero exporter outputs exact *Date and signed *Amount columns.",
-  },
-  {
-    question: "Do you store uploaded bank statements or tax documents?",
-    answer:
-      "Never. StatementFlow operates on a strict Zero-Retention architecture—uploaded PDFs are parsed in ephemeral server RAM and purged immediately after returning your structured grid.",
+      "No. Files are parsed in volatile server RAM and deleted immediately after extraction.",
   },
 ];
 
 export default function HomePage() {
   return (
-    <div className="space-y-24 pb-10">
+    <div className="space-y-20 pb-12">
       <SeoSchema
-        name={`${siteConfig.brandName} — Verified Bank Statement Converter`}
+        name={`${siteConfig.brandName} — PDF Statement to QBO, Xero & Excel`}
         description={siteConfig.description}
         urlPath="/"
         faqs={HOME_FAQS}
       />
 
-      {/* Above-the-Fold Hero + Full Commercial Reconciliation Workbench */}
-      <section className="pt-10 sm:pt-14 max-w-7xl mx-auto px-4 sm:px-6 space-y-10">
-        <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Built for Bookkeepers, CPAs &amp; Small Business Owners</span>
-          </div>
-
-          <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.12]">
-            Convert PDF Bank Statements to{" "}
-            <span className="underline decoration-emerald-500 decoration-4 underline-offset-4">
-              100% Reconciled
-            </span>{" "}
-            .QBO, Xero &amp; Excel
+      {/* SECTION 1: Minimal Editorial Hero + Visual Flow Diagram + Obvious Workbench Entry */}
+      <section className="pt-10 sm:pt-14 max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
+        <div className="max-w-2xl mx-auto text-center space-y-3">
+          <h1 className="font-editorial text-4xl sm:text-6xl font-normal tracking-tight text-[#141413] leading-[1.08]">
+            PDF statements to clean ledgers,{" "}
+            <span className="italic text-[#D97757]">math-verified.</span>
           </h1>
-
-          <p className="text-base sm:text-lg text-slate-600 leading-relaxed">
-            Stop manually re-typing historical PDF statements or fixing broken CSV
-            dates. Extract digital or scanned statements, verify{" "}
-            <strong className="text-slate-900">$0.00 balance discrepancy</strong>{" "}
-            automatically, and import cleanly into QuickBooks or Xero.
+          <p className="text-sm sm:text-base text-[#6B6860]">
+            Drop any bank or credit card PDF below. Export to QuickBooks, Xero,
+            or Excel in one click.
           </p>
         </div>
 
-        {/* Live Interactive Workbench */}
+        {/* Visual 3-Step Diagram Instead of Text Paragraphs */}
+        <HeroPipelineIllustration />
+
+        {/* Primary Obvious Workbench Entry */}
         <StatementWorkbench defaultExportFormat="qbo" />
       </section>
 
-      {/* 3 Anti-Wrapper Moat Pillars */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 space-y-10">
-        <div className="text-center max-w-2xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-            Why Accounting Firms Trust {siteConfig.brandName} Over Generic OCR
-          </h2>
-          <p className="text-sm text-slate-600 mt-2">
-            Generic PDF-to-Excel tools dump messy merged cells and leave you guessing whether a digit was misread.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-3xl border border-slate-200 p-7 space-y-3 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-              <Calculator className="w-5 h-5" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900">
-              Cents-Accurate Math Audit
-            </h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Automatically checks Opening + Credits − Debits against your PDF
-              Closing Balance and pinpoints exact rows with OCR smudges or
-              inverted credit-card signs.
-            </p>
-          </div>
-
-          <div className="bg-white rounded-3xl border border-slate-200 p-7 space-y-3 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900">
-              Native .QBO &amp; Xero Templates
-            </h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Outputs spec-compliant QuickBooks Web Connect (.QBO) files with
-              unique FITIDs and Xero&apos;s strict{" "}
-              <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">
-                *Date,*Amount
-              </code>{" "}
-              signed format—zero formula wrangling.
-            </p>
-          </div>
-
-          <div className="bg-white rounded-3xl border border-slate-200 p-7 space-y-3 shadow-sm">
-            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900">
-              Zero-Retention Privacy
-            </h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Source PDFs are parsed strictly in volatile server memory and
-              destroyed immediately. Optional 1-click account number redaction
-              keeps client PII safe.
-            </p>
-          </div>
-        </div>
+      {/* SECTION 2: 3 Visual Infographic Cards (Minimal Text, Picture-First) */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
+        <h2 className="font-editorial text-2xl sm:text-3xl text-center text-[#141413]">
+          How it works at a glance
+        </h2>
+        <VisualComparisonCards />
       </section>
 
-      {/* Specialized Accounting Workflow Landing Pages Matrix */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 space-y-8">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-            Purpose-Built Accounting Conversion Workflows
+      {/* SECTION 3: Obvious Visual Entry Portals by Format */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="font-editorial text-2xl sm:text-3xl text-[#141413]">
+            Choose your target format
           </h2>
-          <p className="text-sm text-slate-600 mt-1">
-            Select your target accounting ledger or document type for pre-configured formatting rules.
-          </p>
+          <Link
+            href="/tools/qbo-viewer"
+            className="text-xs font-semibold text-[#D97757] hover:underline"
+          >
+            Free .QBO File Viewer →
+          </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {seoPagesConfig.map((wf) => (
             <Link
               key={wf.slug}
               href={`/convert/${wf.slug}`}
-              className="group bg-white rounded-3xl border border-slate-200 hover:border-slate-900 p-6 flex flex-col justify-between transition shadow-sm"
+              className="group bg-white rounded-3xl border border-[#E6E1D6] hover:border-[#D97757] p-6 flex items-center justify-between gap-4 transition shadow-sm"
             >
-              <div className="space-y-2.5">
-                <span className="inline-block px-2.5 py-1 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700">
+              <div className="space-y-1.5">
+                <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#F3EFE6] text-[#57544E]">
                   {wf.badge}
                 </span>
-                <h3 className="text-lg font-bold text-slate-900 group-hover:text-emerald-700 transition">
+                <h3 className="font-editorial text-xl text-[#141413] group-hover:text-[#D97757] transition">
                   {wf.navLabel}
                 </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {wf.seoDescription}
-                </p>
               </div>
-              <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-900">
-                <span>Open Dedicated Converter</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+
+              <div className="w-10 h-10 rounded-2xl bg-[#FAF8F5] group-hover:bg-[#D97757] group-hover:text-white text-[#141413] flex items-center justify-center shrink-0 transition">
+                <ArrowUpRight className="w-5 h-5" />
               </div>
             </Link>
           ))}
 
-          {/* Free Bookkeeper Magnet Card */}
+          {/* Free .QBO Viewer Portal Card */}
           <Link
             href="/tools/qbo-viewer"
-            className="group bg-emerald-950 text-white rounded-3xl border border-emerald-800 p-6 flex flex-col justify-between transition shadow-sm"
+            className="group bg-[#141413] text-white rounded-3xl p-6 flex items-center justify-between gap-4 transition shadow-sm"
           >
-            <div className="space-y-2.5">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-800 text-emerald-100">
-                <Wrench className="w-3 h-3" />
-                100% Free Local Utility
+            <div className="space-y-1.5">
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#2D6A4F] text-white">
+                100% FREE TOOL
               </span>
-              <h3 className="text-lg font-bold">
-                Free Online .QBO &amp; .OFX File Viewer
+              <h3 className="font-editorial text-xl text-white">
+                Inspect .QBO / .OFX File
               </h3>
-              <p className="text-xs text-emerald-200 leading-relaxed">
-                Inspect any QuickBooks Web Connect (.QBO) or .OFX file locally in
-                your browser before importing into your client&apos;s books—or
-                convert .QBO to Excel free.
-              </p>
             </div>
-            <div className="pt-4 mt-4 border-t border-emerald-800/80 flex items-center justify-between text-xs font-bold text-emerald-300">
-              <span>Launch Free .QBO Inspector</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+
+            <div className="w-10 h-10 rounded-2xl bg-white/10 group-hover:bg-[#D97757] text-white flex items-center justify-center shrink-0 transition">
+              <ArrowUpRight className="w-5 h-5" />
             </div>
           </Link>
-        </div>
-      </section>
-
-      {/* Home FAQ */}
-      <section className="max-w-3xl mx-auto px-4 sm:px-6 space-y-6">
-        <h2 className="text-2xl font-extrabold text-slate-900 text-center">
-          Frequently Asked Questions
-        </h2>
-        <div className="space-y-4">
-          {HOME_FAQS.map((f, i) => (
-            <div
-              key={i}
-              className="bg-white rounded-2xl border border-slate-200 p-6 space-y-2"
-            >
-              <h3 className="text-sm font-bold text-slate-900">{f.question}</h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                {f.answer}
-              </p>
-            </div>
-          ))}
         </div>
       </section>
     </div>
