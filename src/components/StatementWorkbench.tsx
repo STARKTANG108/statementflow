@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useMemo, useRef } from "react";
-import Link from "next/link";
 import {
   Upload,
   CheckCircle2,
@@ -11,6 +10,12 @@ import {
   Plus,
   Trash2,
   Wand2,
+  KeyRound,
+  Lock,
+  X,
+  Sparkles,
+  MessageSquarePlus,
+  ExternalLink,
 } from "lucide-react";
 import {
   StatementDocument,
@@ -29,7 +34,11 @@ import {
   generateQuickBooksCsvContent,
   generateVerifiedXlsxArrayBuffer,
 } from "@/lib/exporters";
-import { getRemainingFreePages, consumeFreePages } from "@/components/Navbar";
+import {
+  getRemainingFreePages,
+  consumeFreePages,
+  addQuotaPages,
+} from "@/components/Navbar";
 
 interface StatementWorkbenchProps {
   defaultExportFormat?: ExportFormatType;
@@ -65,6 +74,25 @@ export default function StatementWorkbench({
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
+
+  // Zero-Data-Loss In-Workbench Unlock Modal State
+  const [requiresUnlockToExport, setRequiresUnlockToExport] =
+    useState<boolean>(false);
+  const [showUnlockModal, setShowUnlockModal] = useState<boolean>(false);
+  const [pendingExportFormat, setPendingExportFormat] =
+    useState<ExportFormatType | null>(null);
+  const [licenseInput, setLicenseInput] = useState<string>("");
+  const [isVerifyingKey, setIsVerifyingKey] = useState<boolean>(false);
+  const [unlockFeedback, setUnlockFeedback] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
+
+  // Bank Layout Feedback State
+  const [showLayoutFeedback, setShowLayoutFeedback] = useState<boolean>(false);
+  const [bankNameInput, setBankNameInput] = useState<string>("");
+  const [layoutFeedbackSent, setLayoutFeedbackSent] = useState<boolean>(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const audit = useMemo(() => runReconciliationAudit(doc), [doc]);
@@ -79,13 +107,7 @@ export default function StatementWorkbench({
       return;
     }
 
-    const freeLeft = getRemainingFreePages();
-    if (freeLeft <= 0) {
-      setErrorMsg(
-        "Free trial pages used up. Get an 80-Page Pass ($15) or Monthly Plan ($19) to continue."
-      );
-      return;
-    }
+    const freeLeftBefore = getRemainingFreePages();
 
     setIsUploading(true);
     try {
@@ -103,11 +125,25 @@ export default function StatementWorkbench({
       }
 
       const extracted: StatementDocument = data.document;
-      consumeFreePages(Math.min(extracted.pageCount || 1, freeLeft));
+      const neededPages = Math.max(1, extracted.pageCount || 1);
+
       setDoc(extracted);
-      setStatusBanner(
-        `✓ Extracted ${extracted.rows.length} rows (${extracted.pageCount} page) — source PDF purged from memory.`
-      );
+
+      if (freeLeftBefore >= neededPages) {
+        consumeFreePages(neededPages);
+        setRequiresUnlockToExport(false);
+        setStatusBanner(
+          `✓ Extracted ${extracted.rows.length} rows (${neededPages} page) — source PDF purged from memory.`
+        );
+      } else {
+        if (freeLeftBefore > 0) {
+          consumeFreePages(freeLeftBefore);
+        }
+        setRequiresUnlockToExport(true);
+        setStatusBanner(
+          `✓ Preview Ready: Extracted ${extracted.rows.length} rows (${neededPages} page). Unlock export below to download without losing your table edits.`
+        );
+      }
     } catch (err: unknown) {
       setErrorMsg(
         err instanceof Error ? err.message : "Failed to parse uploaded PDF."
@@ -177,7 +213,7 @@ export default function StatementWorkbench({
 
   const baseFileName = doc.fileName.replace(/\.[^/.]+$/, "");
 
-  const handleExport = (format: ExportFormatType) => {
+  const executeDownload = (format: ExportFormatType) => {
     if (format === "qbo") {
       const qbo = generateQboFileContent(doc, redactAccount);
       triggerBrowserDownload(
@@ -210,8 +246,94 @@ export default function StatementWorkbench({
     }
   };
 
+  const handleExport = (format: ExportFormatType) => {
+    const isSample =
+      doc.extractionMode === "sample_clean" ||
+      doc.extractionMode === "sample_discrepancy";
+
+    // Gate real PDF exports when free quota was insufficient and not yet unlocked
+    if (!isSample && requiresUnlockToExport) {
+      setPendingExportFormat(format);
+      setUnlockFeedback(null);
+      setShowUnlockModal(true);
+      return;
+    }
+
+    executeDownload(format);
+  };
+
+  const handleInlineLicenseRedeem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!licenseInput.trim()) return;
+    setIsVerifyingKey(true);
+    setUnlockFeedback(null);
+
+    try {
+      const res = await fetch("/api/verify-license", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ licenseKey: licenseInput }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.verified) {
+        setUnlockFeedback({
+          type: "error",
+          text: data.error || "Invalid Order / License Key.",
+        });
+        return;
+      }
+
+      const needed = Math.max(1, doc.pageCount || 1);
+      addQuotaPages(Math.max(0, data.pagesAdded - needed));
+      setRequiresUnlockToExport(false);
+      setLicenseInput("");
+      setShowUnlockModal(false);
+      setStatusBanner(
+        `✓ Activated ${data.planName}! Added ${data.pagesAdded} pages — downloading your reconciled file now.`
+      );
+
+      if (pendingExportFormat) {
+        executeDownload(pendingExportFormat);
+        setPendingExportFormat(null);
+      }
+    } catch {
+      setUnlockFeedback({
+        type: "error",
+        text: "Could not verify key. Please try again.",
+      });
+    } finally {
+      setIsVerifyingKey(false);
+    }
+  };
+
+  const handleInlineCheckout = async (planId: string) => {
+    setUnlockFeedback(null);
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId }),
+      });
+      const data = await res.json();
+      if (data.checkoutUrl) {
+        window.open(data.checkoutUrl, "_blank", "noopener,noreferrer");
+      } else if (data.demoMode) {
+        setUnlockFeedback({
+          type: "info",
+          text: `${data.message} Tip: Enter test key SF-TAX80-2026 above to unlock & download immediately!`,
+        });
+      }
+    } catch {
+      setUnlockFeedback({
+        type: "error",
+        text: "Unable to start checkout. Please try again.",
+      });
+    }
+  };
+
   return (
-    <div className="bg-white border border-[#E6E1D6] rounded-[28px] shadow-[0_12px_40px_rgba(20,20,19,0.05)] overflow-hidden">
+    <div className="relative bg-white border border-[#E6E1D6] rounded-[28px] shadow-[0_12px_40px_rgba(20,20,19,0.05)] overflow-hidden">
       {/* STEP 1: OBVIOUS PRIMARY UPLOAD DROPZONE (Claude Warm Style) */}
       <div className="p-6 sm:p-8 bg-[#FAF8F5] border-b border-[#E6E1D6]">
         <div
@@ -264,6 +386,7 @@ export default function StatementWorkbench({
               type="button"
               onClick={() => {
                 setErrorMsg(null);
+                setRequiresUnlockToExport(false);
                 setDoc(CLEAN_SAMPLE_STATEMENT);
               }}
               className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer ${
@@ -278,6 +401,7 @@ export default function StatementWorkbench({
               type="button"
               onClick={() => {
                 setErrorMsg(null);
+                setRequiresUnlockToExport(false);
                 setDoc(DISCREPANCY_SAMPLE_STATEMENT);
               }}
               className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer ${
@@ -290,27 +414,59 @@ export default function StatementWorkbench({
             </button>
           </div>
 
-          <span className="text-xs text-[#6B6860] font-mono">
-            {doc.fileName}
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setPendingExportFormat(null);
+                setUnlockFeedback(null);
+                setShowUnlockModal(true);
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D97757] hover:text-[#C46243] cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Redeem Order Key</span>
+            </button>
+            <span className="text-xs text-[#6B6860] font-mono">
+              {doc.fileName}
+            </span>
+          </div>
         </div>
       </div>
 
       {errorMsg && (
         <div className="mx-6 mt-5 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-900 flex items-center justify-between gap-4">
           <span>{errorMsg}</span>
-          <Link
-            href="/pricing"
-            className="px-3.5 py-1.5 rounded-full bg-[#141413] text-white font-semibold shrink-0"
+          <button
+            type="button"
+            onClick={() => {
+              setUnlockFeedback(null);
+              setShowUnlockModal(true);
+            }}
+            className="px-3.5 py-1.5 rounded-full bg-[#141413] text-white font-semibold shrink-0 cursor-pointer"
           >
-            Get Pages →
-          </Link>
+            Unlock Pages →
+          </button>
         </div>
       )}
 
       {statusBanner && (
-        <div className="mx-6 mt-5 p-3.5 rounded-2xl bg-[#EAF4EE] border border-[#C6E2D1] text-xs text-[#2D6A4F] font-semibold">
-          {statusBanner}
+        <div className="mx-6 mt-5 p-3.5 rounded-2xl bg-[#EAF4EE] border border-[#C6E2D1] text-xs text-[#2D6A4F] font-semibold flex flex-wrap items-center justify-between gap-3">
+          <span>{statusBanner}</span>
+          {requiresUnlockToExport && (
+            <button
+              type="button"
+              onClick={() => {
+                setPendingExportFormat(defaultExportFormat);
+                setUnlockFeedback(null);
+                setShowUnlockModal(true);
+              }}
+              className="px-3.5 py-1.5 rounded-full bg-[#D97757] hover:bg-[#C46243] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Unlock &amp; Download Now</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -344,7 +500,11 @@ export default function StatementWorkbench({
                   : "bg-[#141413] hover:bg-[#2C2B29] text-white"
               }`}
             >
-              <Download className="w-3.5 h-3.5" />
+              {requiresUnlockToExport ? (
+                <Lock className="w-3.5 h-3.5" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
               <span>Download .QBO</span>
             </button>
 
@@ -357,7 +517,11 @@ export default function StatementWorkbench({
                   : "bg-[#F3EFE6] hover:bg-[#E6E1D6] text-[#141413]"
               }`}
             >
-              <Download className="w-3.5 h-3.5" />
+              {requiresUnlockToExport ? (
+                <Lock className="w-3.5 h-3.5" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
               <span>Xero CSV</span>
             </button>
 
@@ -370,7 +534,11 @@ export default function StatementWorkbench({
                   : "bg-[#EAF4EE] hover:bg-[#D5EBDD] text-[#2D6A4F]"
               }`}
             >
-              <Download className="w-3.5 h-3.5" />
+              {requiresUnlockToExport ? (
+                <Lock className="w-3.5 h-3.5" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
               <span>Excel (.XLSX)</span>
             </button>
           </div>
@@ -563,49 +731,250 @@ export default function StatementWorkbench({
         </table>
       </div>
 
-      {/* Compact Footer Toolbar */}
-      <div className="p-4 sm:px-8 bg-[#FAF8F5] border-t border-[#E6E1D6] flex flex-wrap items-center justify-between gap-4 text-xs">
-        <button
-          type="button"
-          onClick={addBlankRow}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-[#DED8CA] bg-white hover:bg-[#F3EFE6] font-semibold text-[#141413] cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Row
-        </button>
+      {/* Compact Footer Toolbar + Unrecognized Bank Layout Feedback Hook */}
+      <div className="p-4 sm:px-8 bg-[#FAF8F5] border-t border-[#E6E1D6] space-y-3 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={addBlankRow}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-[#DED8CA] bg-white hover:bg-[#F3EFE6] font-semibold text-[#141413] cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Row
+            </button>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="inline-flex items-center gap-1.5 text-[#6B6860] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={redactAccount}
-              onChange={(e) => setRedactAccount(e.target.checked)}
-              className="accent-[#D97757] rounded"
-            />
-            <span>Hide Account #</span>
-          </label>
+            <button
+              type="button"
+              onClick={() => {
+                setLayoutFeedbackSent(false);
+                setShowLayoutFeedback((v) => !v);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[#6B6860] hover:text-[#141413] hover:bg-[#EFECE4] transition cursor-pointer"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5 text-[#D97757]" />
+              <span>Report Unrecognized Bank Layout</span>
+            </button>
+          </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-[#6B6860]">Date:</span>
-            {(
-              ["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD"] as DateFormatPreference[]
-            ).map((fmt) => (
-              <button
-                key={fmt}
-                type="button"
-                onClick={() => setDatePref(fmt)}
-                className={`px-2.5 py-1 rounded-full font-semibold cursor-pointer ${
-                  datePref === fmt
-                    ? "bg-[#141413] text-white"
-                    : "bg-white text-[#6B6860] border border-[#E2DDD1]"
-                }`}
-              >
-                {fmt}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="inline-flex items-center gap-1.5 text-[#6B6860] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={redactAccount}
+                onChange={(e) => setRedactAccount(e.target.checked)}
+                className="accent-[#D97757] rounded"
+              />
+              <span>Hide Account #</span>
+            </label>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[#6B6860]">Date:</span>
+              {(
+                [
+                  "MM/DD/YYYY",
+                  "DD/MM/YYYY",
+                  "YYYY-MM-DD",
+                ] as DateFormatPreference[]
+              ).map((fmt) => (
+                <button
+                  key={fmt}
+                  type="button"
+                  onClick={() => setDatePref(fmt)}
+                  className={`px-2.5 py-1 rounded-full font-semibold cursor-pointer ${
+                    datePref === fmt
+                      ? "bg-[#141413] text-white"
+                      : "bg-white text-[#6B6860] border border-[#E2DDD1]"
+                  }`}
+                >
+                  {fmt}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+
+        {/* Inline Unrecognized Bank Layout Drawer */}
+        {showLayoutFeedback && (
+          <div className="p-4 rounded-2xl bg-white border border-[#E6E1D6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {layoutFeedbackSent ? (
+              <div className="text-[#2D6A4F] font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>
+                  Logged bank layout request for &ldquo;{bankNameInput}&rdquo;.
+                  Our parser rules update weekly!
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-2.5">
+                  <span className="font-semibold text-[#141413] shrink-0">
+                    Which bank or card layout had an issue?
+                  </span>
+                  <input
+                    type="text"
+                    value={bankNameInput}
+                    onChange={(e) => setBankNameInput(e.target.value)}
+                    placeholder="e.g. Wells Fargo Commercial 2-Column PDF"
+                    className="flex-1 px-3 py-1.5 rounded-xl bg-[#FAF8F5] border border-[#DED8CA] text-xs text-[#141413]"
+                  />
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!bankNameInput.trim()) return;
+                      setLayoutFeedbackSent(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-full bg-[#141413] text-white font-semibold cursor-pointer"
+                  >
+                    Submit Layout
+                  </button>
+                  <a
+                    href={`mailto:support@getstatementflow.com?subject=${encodeURIComponent(
+                      `Bank Layout Support: ${bankNameInput || doc.institutionName}`
+                    )}&body=${encodeURIComponent(
+                      `Bank / Statement Type: ${bankNameInput || doc.institutionName}\nFile Name: ${doc.fileName}\nRows Detected: ${doc.rows.length}\nNotes:`
+                    )}`}
+                    className="px-3 py-1.5 rounded-full border border-[#DED8CA] text-[#6B6860] hover:text-[#141413] font-semibold"
+                  >
+                    Email Sample
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* ====================================================================
+          IN-WORKBENCH ZERO-DATA-LOSS UNLOCK MODAL
+          Preserves all extracted rows & manual edits in memory while unlocking!
+         ==================================================================== */}
+      {showUnlockModal && (
+        <div className="fixed inset-0 z-50 bg-[#141413]/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E6E1D6] rounded-[28px] max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EAF4EE] text-[#2D6A4F] text-[11px] font-bold mb-2">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>
+                    {doc.rows.length} Rows Safely Preserved in Memory
+                  </span>
+                </div>
+                <h3 className="font-editorial text-2xl sm:text-3xl text-[#141413]">
+                  Unlock &amp; Download Statement
+                </h3>
+                <p className="text-xs text-[#6B6860] mt-1">
+                  Redeem an Order Key or grab a pass below. Your current table
+                  and edits stay right here.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUnlockModal(false)}
+                className="p-2 rounded-full hover:bg-[#EFECE4] text-[#6B6860] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Option 1: Instant Key Redemption */}
+            <form
+              onSubmit={handleInlineLicenseRedeem}
+              className="p-4 rounded-2xl bg-white border border-[#E6E1D6] space-y-3"
+            >
+              <label className="block text-xs font-bold text-[#141413]">
+                Have an Order / License Key?
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={licenseInput}
+                  onChange={(e) => setLicenseInput(e.target.value)}
+                  placeholder="Enter key (e.g. SF-TAX80-2026)"
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-[#FAF8F5] border border-[#DED8CA] text-xs font-mono text-[#141413] focus:outline-none focus:border-[#D97757]"
+                />
+                <button
+                  type="submit"
+                  disabled={isVerifyingKey}
+                  className="px-5 py-2.5 rounded-xl bg-[#D97757] hover:bg-[#C46243] text-white text-xs font-bold cursor-pointer transition shrink-0"
+                >
+                  {isVerifyingKey
+                    ? "Verifying..."
+                    : pendingExportFormat
+                      ? "Unlock & Download"
+                      : "Activate Pages"}
+                </button>
+              </div>
+
+              {unlockFeedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-medium ${
+                    unlockFeedback.type === "error"
+                      ? "bg-rose-50 text-rose-800 border border-rose-200"
+                      : "bg-[#F3EFE6] text-[#141413] border border-[#DED8CA]"
+                  }`}
+                >
+                  {unlockFeedback.text}
+                </div>
+              )}
+            </form>
+
+            {/* Option 2: Get a Pass without leaving the page */}
+            <div className="space-y-2.5">
+              <span className="block text-xs font-bold text-[#6B6860]">
+                Or get an instant page pass (opens in new tab):
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleInlineCheckout("tax_season_pass")}
+                  className="p-4 rounded-2xl bg-white border-2 border-[#D97757] hover:bg-[#FFF6F2] text-left transition cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#D97757]">
+                      Tax Season Pass
+                    </span>
+                    <ExternalLink className="w-3.5 h-3.5 text-[#D97757]" />
+                  </div>
+                  <p className="font-editorial text-2xl text-[#141413] mt-1">
+                    $15{" "}
+                    <span className="text-xs font-sans font-normal text-[#6B6860]">
+                      one-time
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-[#6B6860] mt-1">
+                    80 Statement Pages · No subscription
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleInlineCheckout("bookkeeper_monthly")}
+                  className="p-4 rounded-2xl bg-white border border-[#E6E1D6] hover:border-[#141413] text-left transition cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#141413]">
+                      SMB Monthly
+                    </span>
+                    <ExternalLink className="w-3.5 h-3.5 text-[#6B6860]" />
+                  </div>
+                  <p className="font-editorial text-2xl text-[#141413] mt-1">
+                    $19{" "}
+                    <span className="text-xs font-sans font-normal text-[#6B6860]">
+                      / month
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-[#6B6860] mt-1">
+                    250 Pages/mo · Priority OCR
+                  </p>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
