@@ -929,7 +929,7 @@ export default function StatementWorkbench({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => handleInlineCheckout("tax_season_pass")}
+                  onClick={() => handleInlineCheckout("tax-season-pass")}
                   className="p-4 rounded-2xl bg-white border-2 border-[#D97757] hover:bg-[#FFF6F2] text-left transition cursor-pointer group"
                 >
                   <div className="flex items-center justify-between">
@@ -951,7 +951,7 @@ export default function StatementWorkbench({
 
                 <button
                   type="button"
-                  onClick={() => handleInlineCheckout("bookkeeper_monthly")}
+                  onClick={() => handleInlineCheckout("smb-starter")}
                   className="p-4 rounded-2xl bg-white border border-[#E6E1D6] hover:border-[#141413] text-left transition cursor-pointer"
                 >
                   <div className="flex items-center justify-between">
